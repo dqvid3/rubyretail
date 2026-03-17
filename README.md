@@ -1,6 +1,6 @@
 # RubyRetail
 
-An Android e-commerce app built as a Bachelor's degree project. Users can browse products by category or search, manage a cart and wishlist, save delivery addresses and payment cards, and place orders with full order history.
+An Android e-commerce app built as a Bachelor's degree project. Users can browse products by category or search, manage a cart and wishlist, save delivery addresses and payment cards, place orders, and leave reviews on purchased products.
 
 ## Screenshots
 
@@ -20,7 +20,7 @@ An Android e-commerce app built as a Bachelor's degree project. Users can browse
 | Networking | Retrofit2 + OkHttp |
 | Backend | Python 3.11 / Django 4.2 |
 | Database | MySQL 8.0 |
-| Infrastructure | Docker + Docker Compose |
+| Infrastructure | Docker |
 
 ## Features
 
@@ -32,11 +32,12 @@ An Android e-commerce app built as a Bachelor's degree project. Users can browse
 - **Wishlist** — save items for later, move to cart in one tap
 - **Checkout** — saved address and payment card selection, order total preview
 - **Order history** — full order list with per-item price paid and original price
+- **Reviews** — submit a star rating and comment on any product you have purchased
 
 ## Project Structure
 
 ```
-e-commerce-app/
+RubyRetail/
 ├── app/src/main/java/…/
 │   ├── Activities/         # MainActivity, LoginRegisterActivity, BuyActivity
 │   ├── Adapters/           # RecyclerView adapters
@@ -53,17 +54,18 @@ e-commerce-app/
 
 ## Running Locally
 
-**Requirements:** Docker, Colima (macOS), Android device or emulator (API 26+)
+**Requirements:** [Docker Desktop](https://www.docker.com/products/docker-desktop/) (Windows/macOS/Linux) and an Android device or emulator (API 26+).
+
+> **macOS without Docker Desktop:** you can use [Colima](https://github.com/abiosoft/colima) (`brew install colima && colima start`) as a lightweight alternative to start the Docker daemon.
 
 ### 1. Start the server
 
 ```bash
-colima start
 cd server
 docker compose up --build
 ```
 
-The API will be available at `http://<your-machine-ip>:8000/webmobile/`.
+The API will be available at `http://localhost:8000/webmobile/`.
 
 To wipe all data and start fresh:
 ```bash
@@ -72,25 +74,22 @@ docker compose down -v && docker compose up --build
 
 ### 2. Configure the app
 
-Find your machine's LAN IP:
-```bash
-ipconfig getifaddr en0
-```
+Open `local.properties` in the project root and set `server.baseUrl`:
 
-Add to `local.properties` in the project root:
-```
-server.baseUrl=http://<YOUR_LAN_IP>:8000/webmobile/
-```
-
-> For an emulator use `http://10.0.2.2:8000/webmobile/` instead.
+| Scenario | Value |
+|---|---|
+| Physical device (USB/Wi-Fi) | `http://<your-Mac-LAN-IP>:8000/webmobile/` — find it with `ipconfig getifaddr en0`. Device and Mac must be on the same Wi-Fi. |
+| Android Studio emulator | `http://10.0.2.2:8000/webmobile/` — this is the fixed alias the emulator uses to reach the host machine. |
 
 ### 3. Build and install
+
+**Android Studio:** open the project and press Run, or use the terminal:
 
 ```bash
 ./gradlew installDebug
 ```
 
-The Mac and Android device must be on the same Wi-Fi network. Enable USB debugging on the device before running.
+`installDebug` requires `adb` (Android Debug Bridge). It is bundled with Android Studio, or can be installed standalone via `brew install --cask android-commandlinetools`.
 
 ## Database Schema
 
