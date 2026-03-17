@@ -83,13 +83,14 @@ Open `local.properties` in the project root and set `server.baseUrl`:
 
 ### 3. Build and install
 
-**Android Studio:** open the project and press Run, or use the terminal:
+**Recommended — Android Studio:**
+Open the project in [Android Studio](https://developer.android.com/studio), connect your device or start an emulator, and press Run. Android Studio handles the SDK, Java, and `adb` automatically.
 
+**Command line (if you already have the Android SDK configured):**
 ```bash
 ./gradlew installDebug
 ```
-
-`installDebug` requires `adb` (Android Debug Bridge). It is bundled with Android Studio, or can be installed standalone via `brew install --cask android-commandlinetools`.
+Prerequisites: Java 21+ and the Android SDK with `ANDROID_HOME` set. `adb` must be on your PATH.
 
 ## Database Schema
 
