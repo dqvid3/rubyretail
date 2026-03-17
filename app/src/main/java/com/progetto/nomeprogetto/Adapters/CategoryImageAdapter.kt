@@ -6,7 +6,7 @@ import android.view.ViewGroup
 import androidx.recyclerview.widget.RecyclerView
 import com.progetto.nomeprogetto.databinding.CategoryImageViewDesignBinding
 
-class CategoryImageAdapter(private var categoriesList: HashMap<String,Bitmap>) : RecyclerView.Adapter<CategoryImageAdapter.ViewHolder>() {
+class CategoryImageAdapter(private var categoriesList: HashMap<String,Bitmap>, private val itemSizePx: Int = 0) : RecyclerView.Adapter<CategoryImageAdapter.ViewHolder>() {
 
     private var onClickListener: OnClickListener? = null
 
@@ -19,6 +19,12 @@ class CategoryImageAdapter(private var categoriesList: HashMap<String,Bitmap>) :
         val view = CategoryImageViewDesignBinding.inflate(
             LayoutInflater.from(parent.context), parent, false
         )
+        if (itemSizePx > 0) {
+            view.root.layoutParams = view.root.layoutParams.apply {
+                height = itemSizePx
+                width = itemSizePx
+            }
+        }
         return ViewHolder(view)
     }
 

@@ -3,7 +3,9 @@ package com.progetto.nomeprogetto.Adapters
 import android.content.Context
 import android.content.res.ColorStateList
 import android.graphics.Color
+import android.graphics.Paint
 import android.view.LayoutInflater
+import android.view.View
 import android.view.ViewGroup
 import android.widget.Toast
 import androidx.recyclerview.widget.RecyclerView
@@ -23,6 +25,8 @@ class WishlistAdapter(private var productList: List<Product>,private val listene
         val imageView = binding.imageView
         val productName = binding.productName
         val price = binding.price
+        val originalPrice = binding.originalPrice
+        val discountBadge = binding.discountBadge
         val colorName = binding.colorName
         val colorView = binding.colorView
         val removeProduct = binding.removeProduct
@@ -45,7 +49,18 @@ class WishlistAdapter(private var productList: List<Product>,private val listene
 
         holder.imageView.setImageBitmap(product.picture)
         holder.productName.text = product.name
-        holder.price.text = product.price.toString() + " €"
+        if (product.discount != null) {
+            holder.price.text = String.format("%.2f €", product.discounted_price)
+            holder.originalPrice.text = String.format("%.2f €", product.price)
+            holder.originalPrice.paintFlags = holder.originalPrice.paintFlags or Paint.STRIKE_THRU_TEXT_FLAG
+            holder.originalPrice.visibility = View.VISIBLE
+            holder.discountBadge.text = "-${product.discount}%"
+            holder.discountBadge.visibility = View.VISIBLE
+        } else {
+            holder.price.text = String.format("%.2f €", product.price)
+            holder.originalPrice.visibility = View.GONE
+            holder.discountBadge.visibility = View.GONE
+        }
         holder.colorName.text = product.colorName
         holder.colorView.backgroundTintList = ColorStateList.valueOf(Color.parseColor(product.color_hex))
 
@@ -54,7 +69,8 @@ class WishlistAdapter(private var productList: List<Product>,private val listene
         }
 
         holder.addToCart.setOnClickListener{
-            product.colorId?.let { addToWish(it, holder.itemView.context) }
+            if (product.colorId != null)
+                addToCart(product.colorId, product.id, holder.itemView.context)
         }
 
         holder.itemView.setOnClickListener {
@@ -80,22 +96,23 @@ class WishlistAdapter(private var productList: List<Product>,private val listene
     }
 
     private fun removeFromWishlist(itemId: Int,position: Int,context: Context){
-        var query = "DELETE FROM wishlist_items WHERE id=$itemId;"
+        val query = "DELETE FROM wishlist_items WHERE id=%s;"
+        val params = com.google.gson.JsonArray().apply { add(itemId) }.toString()
 
-        ClientNetwork.retrofit.remove(query).enqueue(object : Callback<JsonObject> {
+        ClientNetwork.retrofit.removeSafe(query, params).enqueue(object : Callback<JsonObject> {
             override fun onResponse(call: Call<JsonObject>, response: Response<JsonObject>) = removeItem(position)
             override fun onFailure(call: Call<JsonObject>, t: Throwable) =
                 Toast.makeText(context, "Failed request: " + t.message, Toast.LENGTH_LONG).show()
         })
     }
 
-    private fun addToWish(colorId: Int,context: Context){
-        var query = "SELECT pc.stock, ci.id AS item_id " +
-                "FROM product_colors pc LEFT JOIN cart_items ci ON pc.id = ci.color_id AND ci.user_id = $userId " +
-                "WHERE pc.id = $colorId;"
+    private fun addToCart(colorId: Int, productId: Int, context: Context){
+        val checkQuery = "SELECT pc.stock, ci.id AS item_id " +
+                "FROM product_colors pc LEFT JOIN cart_items ci ON pc.id = ci.color_id AND ci.user_id = %s " +
+                "WHERE pc.id = %s;"
+        val checkParams = com.google.gson.JsonArray().apply { add(userId); add(colorId) }.toString()
 
-        println(query)
-        ClientNetwork.retrofit.select(query).enqueue(object : Callback<JsonObject> {
+        ClientNetwork.retrofit.selectSafe(checkQuery, checkParams).enqueue(object : Callback<JsonObject> {
             override fun onResponse(call: Call<JsonObject>, response: Response<JsonObject>) {
                 if (response.isSuccessful) {
                     val itemsArray = response.body()?.getAsJsonArray("queryset")
@@ -108,19 +125,18 @@ class WishlistAdapter(private var productList: List<Product>,private val listene
                             if (stock == 0)
                                 Toast.makeText(context, "Articolo non disponibile al momento", Toast.LENGTH_LONG).show()
                             else {
-                                query = "INSERT INTO cart_items (user_id,color_id,quantity) VALUES ($userId,$colorId,1);"
-
-                                ClientNetwork.retrofit.insert(query).enqueue(object : Callback<JsonObject> {
-                                        override fun onResponse(call: Call<JsonObject>, response: Response<JsonObject>) {
-                                            if (response.isSuccessful)
-                                                Toast.makeText(context, "Articolo aggiunto al carrello", Toast.LENGTH_SHORT).show()
-                                            else
-                                                Toast.makeText(context, "Errore nell'inserimento dell'articolo, riprova", Toast.LENGTH_SHORT).show()
-                                        }
-
-                                        override fun onFailure(call: Call<JsonObject>, t: Throwable) =
-                                            Toast.makeText(context, "Failed request: " + t.message, Toast.LENGTH_LONG).show()
-                                    })
+                                val insertQuery = "INSERT INTO cart_items (user_id,product_id,color_id,quantity) VALUES (%s,%s,%s,1);"
+                                val insertParams = com.google.gson.JsonArray().apply { add(userId); add(productId); add(colorId) }.toString()
+                                ClientNetwork.retrofit.insertSafe(insertQuery, insertParams).enqueue(object : Callback<JsonObject> {
+                                    override fun onResponse(call: Call<JsonObject>, response: Response<JsonObject>) {
+                                        if (response.isSuccessful)
+                                            Toast.makeText(context, "Articolo aggiunto al carrello", Toast.LENGTH_SHORT).show()
+                                        else
+                                            Toast.makeText(context, "Errore nell'inserimento dell'articolo, riprova", Toast.LENGTH_SHORT).show()
+                                    }
+                                    override fun onFailure(call: Call<JsonObject>, t: Throwable) =
+                                        Toast.makeText(context, "Failed request: " + t.message, Toast.LENGTH_LONG).show()
+                                })
                             }
                         }
                     }

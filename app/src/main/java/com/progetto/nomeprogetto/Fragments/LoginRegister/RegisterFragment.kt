@@ -23,6 +23,7 @@ import retrofit2.Response
 class RegisterFragment : Fragment() {
 
     private lateinit var binding: FragmentRegisterBinding
+
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?,
         savedInstanceState: Bundle?
@@ -41,18 +42,16 @@ class RegisterFragment : Fragment() {
             val surname = binding.surname.text.toString().trim()
             val email = binding.email.text.toString().trim()
             val password = binding.password.text.toString().trim()
-            if(name.isEmpty() || surname.isEmpty() || username.isEmpty() ||email.isEmpty() || password.isEmpty())
+            if(name.isEmpty() || surname.isEmpty() || username.isEmpty() || email.isEmpty() || password.isEmpty())
                 Toast.makeText(requireContext(), "Perfavore riempi tutti i campi", Toast.LENGTH_SHORT).show()
-            else{
-                userExists(email, username) {exists ->
-                    if(exists==1)
+            else {
+                userExists(email, username) { exists ->
+                    if(exists == 1)
                         Toast.makeText(requireContext(), "Username inserito già esistente", Toast.LENGTH_SHORT).show()
-                    else if(exists==2)
+                    else if(exists == 2)
                         Toast.makeText(requireContext(), "Email inserita già esistente", Toast.LENGTH_SHORT).show()
-                    else if(exists==0){
-                        val  user = User(username,name,surname,email,password)
-                        registerUser(user)
-                    }
+                    else if(exists == 0)
+                        registerUser(User(username, name, surname, email, password))
                 }
             }
         }
@@ -61,32 +60,31 @@ class RegisterFragment : Fragment() {
     }
 
     private fun userExists(email: String, username: String, callback: (Int) -> Unit){
-        var query = "SELECT id FROM users WHERE username = '$username';"
+        val usernameQuery = "SELECT id FROM users WHERE username = %s;"
+        val usernameParams = JsonArray().apply { add(username) }.toString()
 
-        ClientNetwork.retrofit.select(query).enqueue(object : Callback<JsonObject> {
+        ClientNetwork.retrofit.selectSafe(usernameQuery, usernameParams).enqueue(object : Callback<JsonObject> {
             override fun onResponse(call: Call<JsonObject>, response: Response<JsonObject>) {
                 if (response.isSuccessful) {
-                    var resultSetSize = (response.body()?.get("queryset") as JsonArray).size()
-                    if(resultSetSize==1) callback(1)
-                    else{ //se non esiste un utente con quell'username
-                        query = "SELECT id FROM users WHERE email = '$email';"
-                        ClientNetwork.retrofit.select(query).enqueue(object : Callback<JsonObject> {
-                            override fun onResponse(call: Call<JsonObject>, response: Response<JsonObject>) {
-                                if (response.isSuccessful) {
-                                    resultSetSize = (response.body()?.get("queryset") as JsonArray).size()
-                                    if(resultSetSize==1) callback(2)
-                                    else callback(0)
-                                } else
-                                    callback(-1)
-                            }
-                            override fun onFailure(call: Call<JsonObject>, t: Throwable) {
-                                Toast.makeText(requireContext(), "Failed request: " + t.message, Toast.LENGTH_LONG).show()
-                                callback(-1)
-                            }
-                        })
-                    }
-                } else
-                    callback(-1)
+                    val size = (response.body()?.get("queryset") as JsonArray).size()
+                    if(size == 1) { callback(1); return }
+
+                    val emailQuery = "SELECT id FROM users WHERE email = %s;"
+                    val emailParams = JsonArray().apply { add(email) }.toString()
+
+                    ClientNetwork.retrofit.selectSafe(emailQuery, emailParams).enqueue(object : Callback<JsonObject> {
+                        override fun onResponse(call: Call<JsonObject>, response: Response<JsonObject>) {
+                            if (response.isSuccessful) {
+                                val s = (response.body()?.get("queryset") as JsonArray).size()
+                                callback(if (s == 1) 2 else 0)
+                            } else callback(-1)
+                        }
+                        override fun onFailure(call: Call<JsonObject>, t: Throwable) {
+                            Toast.makeText(requireContext(), "Failed request: " + t.message, Toast.LENGTH_LONG).show()
+                            callback(-1)
+                        }
+                    })
+                } else callback(-1)
             }
             override fun onFailure(call: Call<JsonObject>, t: Throwable) {
                 Toast.makeText(requireContext(), "Failed request: " + t.message, Toast.LENGTH_LONG).show()
@@ -96,37 +94,30 @@ class RegisterFragment : Fragment() {
     }
 
     private fun registerUser(user: User){
-        var query = "INSERT INTO users (username, name, surname, email, password)\n" +
-                "VALUES ('${user.username}', '${user.name}', '${user.surname}'," +
-                " '${user.email}', '${user.password}');"
-
-        ClientNetwork.retrofit.insert(query).enqueue(object : Callback<JsonObject> {
-            override fun onResponse(call: Call<JsonObject>, response: Response<JsonObject>) {
-                if(response.isSuccessful) {
-                    query = "SELECT id FROM users WHERE username = '${user.username}';"
-                    ClientNetwork.retrofit.select(query).enqueue(object : Callback<JsonObject> {
-                        override fun onResponse(call: Call<JsonObject>, response: Response<JsonObject>) {
-                            if (response.isSuccessful) {
-                                var userObject = response.body()?.get("queryset") as JsonArray
-                                val sharedPref = requireActivity().getSharedPreferences(getString(R.string.preference_file_key), Context.MODE_PRIVATE)
-                                sharedPref.edit().putBoolean("IS_LOGGED_IN", true)
-                                    .putInt("ID",userObject[0].asJsonObject.get("id").asInt)
-                                    .apply()
-
-                                startActivity(Intent(requireContext(), MainActivity::class.java))
-                                requireActivity().finish()
-                                Toast.makeText(requireContext(), "Registrazione avvenuta con successo",Toast.LENGTH_SHORT).show()
-                            }else
-                                Toast.makeText(requireContext(), "Errore nell'effettuare la registrazione, riprova",Toast.LENGTH_SHORT).show()
+        ClientNetwork.retrofit.register(user.username, user.name, user.surname, user.email, user.password)
+            .enqueue(object : Callback<JsonObject> {
+                override fun onResponse(call: Call<JsonObject>, response: Response<JsonObject>) {
+                    if(response.isSuccessful) {
+                        val result = response.body()?.get("queryset") as? JsonArray
+                        if (result != null && result.size() == 1) {
+                            val sharedPref = requireActivity().getSharedPreferences(getString(R.string.preference_file_key), Context.MODE_PRIVATE)
+                            sharedPref.edit()
+                                .putBoolean("IS_LOGGED_IN", true)
+                                .putInt("ID", result[0].asJsonObject.get("id").asInt)
+                                .apply()
+                            startActivity(Intent(requireContext(), MainActivity::class.java))
+                            requireActivity().finish()
+                            Toast.makeText(requireContext(), "Registrazione avvenuta con successo", Toast.LENGTH_SHORT).show()
+                        } else {
+                            Toast.makeText(requireContext(), "Errore nella registrazione, riprova", Toast.LENGTH_SHORT).show()
                         }
-                        override fun onFailure(call: Call<JsonObject>, t: Throwable) =
-                            Toast.makeText(requireContext(), "Failed request: " + t.message, Toast.LENGTH_LONG).show()
-                    })
-                }else Toast.makeText(requireContext(), "Errore nell'effettuare la registrazione, riprova",Toast.LENGTH_SHORT).show()
-            }
-            override fun onFailure(call: Call<JsonObject>, t: Throwable) {
-                Toast.makeText(requireContext(), "Failed request: " + t.message, Toast.LENGTH_LONG).show()
-            }
-        })
+                    } else {
+                        Toast.makeText(requireContext(), "Errore nella registrazione, riprova", Toast.LENGTH_SHORT).show()
+                    }
+                }
+                override fun onFailure(call: Call<JsonObject>, t: Throwable) {
+                    Toast.makeText(requireContext(), "Failed request: " + t.message, Toast.LENGTH_LONG).show()
+                }
+            })
     }
 }

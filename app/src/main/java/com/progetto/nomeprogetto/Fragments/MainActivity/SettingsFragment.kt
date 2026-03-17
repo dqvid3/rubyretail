@@ -8,8 +8,8 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import com.progetto.nomeprogetto.Activities.LoginRegisterActivity
+import com.progetto.nomeprogetto.Fragments.MainActivity.Settings.AddressAndCardFragment
 import com.progetto.nomeprogetto.R
-import com.progetto.nomeprogetto.databinding.FragmentAccountBinding
 import com.progetto.nomeprogetto.databinding.FragmentSettingsBinding
 
 class SettingsFragment : Fragment() {
@@ -35,6 +35,28 @@ class SettingsFragment : Fragment() {
                 .commit()
 
             requireActivity().finish()
+        }
+
+        binding.yourAddresses.setOnClickListener{
+            val fragment = AddressAndCardFragment()
+            val bundle = Bundle()
+            bundle.putInt("type",0)
+            fragment.arguments = bundle
+            parentFragmentManager.beginTransaction()
+                .hide(this)
+                .add(R.id.home_fragment_container,fragment)
+                .commit()
+        }
+
+        binding.yourCards.setOnClickListener{
+            val fragment = AddressAndCardFragment()
+            val bundle = Bundle()
+            bundle.putInt("type",1)
+            fragment.arguments = bundle
+            parentFragmentManager.beginTransaction()
+                .hide(this)
+                .add(R.id.home_fragment_container,fragment)
+                .commit()
         }
 
         return binding.root

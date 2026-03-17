@@ -12,4 +12,8 @@
 /captures
 .externalNativeBuild
 .cxx
-local.properties
+
+# Server — ignore Docker DB volume data
+server/db_data/
+# Server — never commit secrets
+server/.env

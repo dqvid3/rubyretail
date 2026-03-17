@@ -4,6 +4,16 @@ plugins {
     id 'kotlin-parcelize'
 }
 
+// Read server URL from local.properties (gitignored).
+// Add `server.baseUrl=http://<YOUR_IP>:8000/webmobile/` to local.properties.
+// Default: Android emulator loopback (10.0.2.2). For physical device use your Mac's LAN IP.
+def localProperties = new Properties()
+def localPropertiesFile = rootProject.file('local.properties')
+if (localPropertiesFile.exists()) {
+    localPropertiesFile.withReader('UTF-8') { reader -> localProperties.load(reader) }
+}
+def serverBaseUrl = localProperties.getProperty('server.baseUrl', 'http://10.0.2.2:8000/webmobile/')
+
 android {
     namespace 'com.progetto.nomeprogetto'
     compileSdk 33
@@ -16,9 +26,11 @@ android {
         versionName "1.0"
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        buildConfigField "String", "SERVER_BASE_URL", "\"${serverBaseUrl}\""
     }
 
     buildFeatures {
+        buildConfig true
         viewBinding true
     }
 
@@ -40,7 +52,7 @@ android {
 dependencies {
     implementation 'com.squareup.retrofit2:retrofit:2.9.0'
     implementation 'com.squareup.retrofit2:converter-gson:2.9.0'
-
+    implementation 'com.github.bumptech.glide:glide:4.12.0'
     implementation 'com.airbnb.android:lottie:4.1.0'
     implementation 'androidx.core:core-ktx:1.7.0'
     implementation 'androidx.appcompat:appcompat:1.6.1'

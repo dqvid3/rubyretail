@@ -122,22 +122,35 @@ class CartFragment : Fragment(), CartAdapterListener {
 
     private fun setProducts(userId: Int,type: Int){
         productList.clear()
-        var query: String
+        val query: String
         if(type==0) //cart
-            query = "SELECT ci.id as itemId,ci.quantity,pc.stock,pc.color,pc.color_hex,p.id,name,description,price," +
-                    "width,height,length,main_picture_path,upload_date,pp.picture_path,ci.color_id," +
-                    "IFNULL((SELECT COUNT(*) FROM product_reviews WHERE product_id = p.id),0) AS review_count, " +
-                    "IFNULL((SELECT AVG(rating) FROM product_reviews WHERE product_id = p.id),0) AS avg_rating " +
-                    "FROM products p, cart_items ci,product_colors pc,product_pictures pp WHERE ci.user_id=$userId " +
-                    "and pc.id = ci.color_id and pp.picture_index=0 and pp.color_id=pc.id and p.id = pp.product_id;"
-        else query = "SELECT wi.id as itemId,wi.user_id,pc.color,pc.color_hex,pp.picture_path,p.id,name,description,price,width,height," +
-                "length,main_picture_path,upload_date,wi.color_id, " +
+            query = "SELECT ci.id AS itemId,ci.quantity,pc.stock,pc.color,pc.color_hex," +
+                    "p.id,p.name,p.description,p.price,p.width,p.height,p.length," +
+                    "p.main_picture_path,p.upload_date,pp.picture_path,ci.color_id," +
+                    "IFNULL((SELECT COUNT(*) FROM product_reviews WHERE product_id = p.id),0) AS review_count," +
+                    "IFNULL((SELECT AVG(rating) FROM product_reviews WHERE product_id = p.id),0) AS avg_rating," +
+                    "s.discount, ROUND(p.price * (1 - IFNULL(s.discount,0) / 100.0), 2) AS discounted_price " +
+                    "FROM cart_items ci " +
+                    "JOIN products p ON p.id = ci.product_id " +
+                    "JOIN product_colors pc ON pc.id = ci.color_id " +
+                    "JOIN product_pictures pp ON pp.color_id = pc.id AND pp.picture_index = 0 AND pp.product_id = p.id " +
+                    "LEFT JOIN sales s ON s.product_id = p.id AND NOW() BETWEEN s.start_date AND s.end_date " +
+                    "WHERE ci.user_id = %s;"
+        else query = "SELECT wi.id AS itemId,pc.color,pc.color_hex,pp.picture_path," +
+                "p.id,p.name,p.description,p.price,p.width,p.height,p.length," +
+                "p.main_picture_path,p.upload_date,wi.color_id," +
                 "IFNULL((SELECT COUNT(*) FROM product_reviews WHERE product_id = p.id),0) AS review_count," +
-                "IFNULL((SELECT AVG(rating) FROM product_reviews WHERE product_id = p.id),0) AS avg_rating " +
-                "FROM products p, wishlist_items wi,product_colors pc,product_pictures pp WHERE wi.user_id=$userId " +
-                "and pc.id = wi.color_id and pp.picture_index=0 and pp.color_id=pc.id and p.id = pp.product_id;"
+                "IFNULL((SELECT AVG(rating) FROM product_reviews WHERE product_id = p.id),0) AS avg_rating," +
+                "s.discount, ROUND(p.price * (1 - IFNULL(s.discount,0) / 100.0), 2) AS discounted_price " +
+                "FROM wishlist_items wi " +
+                "JOIN products p ON p.id = wi.product_id " +
+                "JOIN product_colors pc ON pc.id = wi.color_id " +
+                "JOIN product_pictures pp ON pp.color_id = pc.id AND pp.picture_index = 0 AND pp.product_id = p.id " +
+                "LEFT JOIN sales s ON s.product_id = p.id AND NOW() BETWEEN s.start_date AND s.end_date " +
+                "WHERE wi.user_id = %s;"
+        val params = com.google.gson.JsonArray().apply { add(userId) }.toString()
 
-        ClientNetwork.retrofit.select(query).enqueue(object : Callback<JsonObject> {
+        ClientNetwork.retrofit.selectSafe(query, params).enqueue(object : Callback<JsonObject> {
             override fun onResponse(call: Call<JsonObject>, response: Response<JsonObject>) {
                 if (response.isSuccessful) {
                     var loadedProducts = 0
@@ -163,6 +176,9 @@ class CartFragment : Fragment(), CartAdapterListener {
                             val color_hex = productObject.get("color_hex").asString
                             val picture_path = productObject.get("picture_path").asString
                             val colorId = productObject.get("color_id").asInt
+                            val discountElem = productObject.get("discount")
+                            val discount = if (discountElem == null || discountElem.isJsonNull) null else discountElem.asInt
+                            val discountedPrice = productObject.get("discounted_price").asDouble
                             var stock: Int? = null
                             var quantity: Int? = null
                             if(type == 0){
@@ -170,8 +186,9 @@ class CartFragment : Fragment(), CartAdapterListener {
                                 quantity = productObject.get("quantity").asInt
                                 if (stock>0 && quantity>stock){
                                     quantity = stock
-                                    query = "UPDATE cart_items set quantity=$quantity where id=$itemId;"
-                                    ClientNetwork.retrofit.update(query).enqueue(object : Callback<JsonObject> {
+                                    val updateQuery = "UPDATE cart_items set quantity=%s where id=%s;"
+                                    val updateParams = com.google.gson.JsonArray().apply { add(quantity); add(itemId) }.toString()
+                                    ClientNetwork.retrofit.updateSafe(updateQuery, updateParams).enqueue(object : Callback<JsonObject> {
                                         override fun onResponse(call: Call<JsonObject>, response: Response<JsonObject>) {}
                                         override fun onFailure(call: Call<JsonObject>, t: Throwable) =
                                             Toast.makeText(context, "Failed request: " + t.message, Toast.LENGTH_LONG).show()
@@ -190,7 +207,8 @@ class CartFragment : Fragment(), CartAdapterListener {
                                                 if(j==1) {
                                                     val product = Product(id, name, description, price, width, height,
                                                         length, main_picture, avgRating, reviewsNumber, uploadDate,
-                                                        itemId, color, color_hex, quantity, stock, picture,colorId)
+                                                        itemId, color, color_hex, quantity, stock, picture, colorId,
+                                                        discount = discount, discounted_price = discountedPrice)
                                                     productList.add(product)
                                                     loadedProducts++
                                                     if (loadedProducts == productsArray.size()) {

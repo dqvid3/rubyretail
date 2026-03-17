@@ -15,8 +15,6 @@ import com.google.gson.JsonArray
 import com.google.gson.JsonObject
 import com.progetto.nomeprogetto.Activities.BuyActivity
 import com.progetto.nomeprogetto.ClientNetwork
-import com.progetto.nomeprogetto.Objects.User
-import com.progetto.nomeprogetto.Objects.UserAddress
 import com.progetto.nomeprogetto.Objects.UserCard
 import com.progetto.nomeprogetto.R
 import com.progetto.nomeprogetto.databinding.FragmentAddCardBinding
@@ -41,37 +39,28 @@ class AddCardFragment : Fragment() {
             arguments?.getParcelable("card")
 
         val currentYear = Calendar.getInstance().get(Calendar.YEAR)
-        val months = arrayOf("01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12")
+        val months = arrayOf("01","02","03","04","05","06","07","08","09","10","11","12")
         val years = Array(21) { (currentYear + it).toString() }
-        val monthSpinner = binding.month
-        val yearSpinner = binding.year
 
         var modify = false
-
         var cardMonth = ""
         var cardYear = ""
+
         if (card != null){
             binding.cardholderName.setText(card.name)
             binding.cardNumber.setText(card.card_number)
             val date = card.expiration_date.split("/")
             cardMonth = date[0]
-            val monthIndex = months.indexOf(cardMonth)
-            if (monthIndex != -1)
-                monthSpinner.setSelection(monthIndex)
+            months.indexOf(cardMonth).takeIf { it != -1 }?.let { binding.month.setSelection(it) }
             cardYear = date[1]
-            val yearIndex = years.indexOf(cardYear)
-            if (yearIndex != -1)
-                yearSpinner.setSelection(yearIndex)
+            years.indexOf(cardYear).takeIf { it != -1 }?.let { binding.year.setSelection(it) }
             modify = true
         }
 
-        val monthAdapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_item, months)
-        monthAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
-        monthSpinner.adapter = monthAdapter
-
-        val yearAdapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_item, years)
-        yearAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
-        yearSpinner.adapter = yearAdapter
+        binding.month.adapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_item, months)
+            .also { it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item) }
+        binding.year.adapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_item, years)
+            .also { it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item) }
 
         binding.saveButton.setOnClickListener {
             val name = binding.cardholderName.text.toString()
@@ -84,17 +73,17 @@ class AddCardFragment : Fragment() {
             } else {
                 val sharedPref = requireActivity().getSharedPreferences(getString(R.string.preference_file_key), Context.MODE_PRIVATE)
                 val userId = sharedPref.getInt("ID", 0)
-                val insertedCard = UserCard(0,name, card_number, "$month/$year", cvv.toInt())
-                if (modify){
+                val insertedCard = UserCard(0, name, card_number, "$month/$year", cvv.toInt())
+                if (modify) {
                     if (card != null) {
-                        if (card.name == name && card.card_number == card_number && cardMonth == month &&  cardYear == year && cvv.isBlank())
+                        if (card.name == name && card.card_number == card_number && cardMonth == month && cardYear == year && cvv.isBlank())
                             Toast.makeText(requireContext(), "Non hai modificato nulla", Toast.LENGTH_SHORT).show()
                         else {
                             insertedCard.id = card.id
                             updateCard(insertedCard)
                         }
                     }
-                }else {
+                } else {
                     cardExists(insertedCard, userId) { exists ->
                         if (exists)
                             Toast.makeText(requireContext(), "Carta già esistente nel tuo account", Toast.LENGTH_SHORT).show()
@@ -107,32 +96,24 @@ class AddCardFragment : Fragment() {
 
         binding.animationView.addAnimatorListener(object : Animator.AnimatorListener {
             override fun onAnimationStart(p0: Animator) {}
-            override fun onAnimationEnd(p0: Animator) {
-                closeFragment()
-            }
+            override fun onAnimationEnd(p0: Animator) { closeFragment() }
             override fun onAnimationCancel(p0: Animator) {}
             override fun onAnimationRepeat(p0: Animator) {}
         })
 
-        binding.backButton.setOnClickListener{
-            closeFragment()
-        }
+        binding.backButton.setOnClickListener{ closeFragment() }
 
         return binding.root
     }
 
-    private fun cardExists(card: UserCard,userId: Int, callback: (Boolean) -> Unit){
-        var query = "SELECT id FROM user_payments WHERE user_id = $userId AND card_number = ${card.card_number};"
+    private fun cardExists(card: UserCard, userId: Int, callback: (Boolean) -> Unit){
+        val query = "SELECT id FROM user_payments WHERE user_id = %s AND card_number = %s;"
+        val params = JsonArray().apply { add(userId); add(card.card_number) }.toString()
 
-        ClientNetwork.retrofit.select(query).enqueue(object : Callback<JsonObject> {
+        ClientNetwork.retrofit.selectSafe(query, params).enqueue(object : Callback<JsonObject> {
             override fun onResponse(call: Call<JsonObject>, response: Response<JsonObject>) {
-                if (response.isSuccessful) {
-                    val resultSetSize = (response.body()?.get("queryset") as JsonArray).size()
-                    if(resultSetSize==1)
-                        callback(true)
-                    else
-                        callback(false)
-                }
+                if (response.isSuccessful)
+                    callback((response.body()?.get("queryset") as JsonArray).size() == 1)
             }
             override fun onFailure(call: Call<JsonObject>, t: Throwable) =
                 Toast.makeText(requireContext(), "Failed request: " + t.message, Toast.LENGTH_LONG).show()
@@ -140,16 +121,16 @@ class AddCardFragment : Fragment() {
     }
 
     private fun addCard(c: UserCard, userId: Int) {
-        val query = "INSERT INTO user_payments (user_id,card_number,cardholder_name,cvv,expiration_date) " +
-                "VALUES ($userId,'${c.card_number}','${c.name}',${c.cvv},'${c.expiration_date}');"
+        val query = "INSERT INTO user_payments (user_id, card_number, cardholder_name, cvv, expiration_date) " +
+                "VALUES (%s, %s, %s, %s, %s);"
+        val params = JsonArray().apply {
+            add(userId); add(c.card_number); add(c.name); add(c.cvv); add(c.expiration_date)
+        }.toString()
 
-        ClientNetwork.retrofit.insert(query).enqueue(object : Callback<JsonObject> {
+        ClientNetwork.retrofit.insertSafe(query, params).enqueue(object : Callback<JsonObject> {
             override fun onResponse(call: Call<JsonObject>, response: Response<JsonObject>) {
-                if(response.isSuccessful) {
-                    Toast.makeText(requireContext(), "Carta salvata con successo",Toast.LENGTH_SHORT).show()
-                    startAnimation()
-                }else
-                    Toast.makeText(requireContext(), "Errore nel salvataggio, riprova",Toast.LENGTH_SHORT).show()
+                if(response.isSuccessful) { Toast.makeText(requireContext(), "Carta salvata con successo", Toast.LENGTH_SHORT).show(); startAnimation() }
+                else Toast.makeText(requireContext(), "Errore nel salvataggio, riprova", Toast.LENGTH_SHORT).show()
             }
             override fun onFailure(call: Call<JsonObject>, t: Throwable) =
                 Toast.makeText(requireContext(), "Failed request: " + t.message, Toast.LENGTH_LONG).show()
@@ -157,17 +138,16 @@ class AddCardFragment : Fragment() {
     }
 
     private fun updateCard(c: UserCard) {
-        val query = "UPDATE user_payments SET card_number = '${c.card_number}',cardholder_name = '${c.name}', " +
-                "expiration_date = '${c.expiration_date}',cvv = '${c.cvv}' " +
-                "WHERE id = ${c.id};"
+        val query = "UPDATE user_payments SET card_number = %s, cardholder_name = %s, " +
+                "expiration_date = %s, cvv = %s WHERE id = %s;"
+        val params = JsonArray().apply {
+            add(c.card_number); add(c.name); add(c.expiration_date); add(c.cvv); add(c.id)
+        }.toString()
 
-        ClientNetwork.retrofit.update(query).enqueue(object : Callback<JsonObject> {
+        ClientNetwork.retrofit.updateSafe(query, params).enqueue(object : Callback<JsonObject> {
             override fun onResponse(call: Call<JsonObject>, response: Response<JsonObject>) {
-                if(response.isSuccessful) {
-                    Toast.makeText(requireContext(), "Carta salvata con successo",Toast.LENGTH_SHORT).show()
-                    startAnimation()
-                }else
-                    Toast.makeText(requireContext(), "Errore nel salvataggio, riprova",Toast.LENGTH_SHORT).show()
+                if(response.isSuccessful) { Toast.makeText(requireContext(), "Carta salvata con successo", Toast.LENGTH_SHORT).show(); startAnimation() }
+                else Toast.makeText(requireContext(), "Errore nel salvataggio, riprova", Toast.LENGTH_SHORT).show()
             }
             override fun onFailure(call: Call<JsonObject>, t: Throwable) =
                 Toast.makeText(requireContext(), "Failed request: " + t.message, Toast.LENGTH_LONG).show()
@@ -181,13 +161,9 @@ class AddCardFragment : Fragment() {
     }
 
     private fun closeFragment(){
-        parentFragmentManager.beginTransaction()
-            .remove(this)
-            .commit()
+        parentFragmentManager.beginTransaction().remove(this).commit()
         parentFragmentManager.findFragmentByTag("AccountFragment")?.let {
-            parentFragmentManager.beginTransaction()
-                .show(it)
-                .commit()
+            parentFragmentManager.beginTransaction().show(it).commit()
         }
         (activity as? BuyActivity)?.onAddCardFragmentClose()
     }

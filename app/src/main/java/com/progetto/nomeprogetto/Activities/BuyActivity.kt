@@ -103,7 +103,7 @@ class BuyActivity : AppCompatActivity() {
         binding.buyButton.setOnClickListener{
             var totalAmt = 0.0
             for (product in orderList)
-                    totalAmt += product.price * (product.quantity ?: 0)
+                    totalAmt += product.discounted_price * (product.quantity ?: 0)
             createOrder(orderList, totalAmt, userId)
         }
     }
@@ -163,12 +163,13 @@ class BuyActivity : AppCompatActivity() {
 
     private fun setAddresses(addressList: ArrayList<UserAddress>, userId: Int,selectedId:Int){
         val query = "SELECT id,address_line1,address_line2,name,city,county,state,postal_code " +
-                "FROM user_addresses WHERE user_id=$userId;"
+                "FROM user_addresses WHERE user_id=%s;"
+        val params = com.google.gson.JsonArray().apply { add(userId) }.toString()
 
         val addressSelectionLayout = binding.addressSelection
         var selected_id = selectedId
 
-        ClientNetwork.retrofit.select(query).enqueue(object : Callback<JsonObject> {
+        ClientNetwork.retrofit.selectSafe(query, params).enqueue(object : Callback<JsonObject> {
             override fun onResponse(call: Call<JsonObject>, response: Response<JsonObject>) {
                 if (response.isSuccessful) {
                     var loadedAddresses = 0
@@ -213,12 +214,13 @@ class BuyActivity : AppCompatActivity() {
 
     private fun setCards(cardList: ArrayList<UserCard>, userId: Int,selectedId:Int){
         val query = "SELECT id,cardholder_name,card_number,expiration_date,cvv " +
-                "FROM user_payments WHERE user_id=$userId;"
+                "FROM user_payments WHERE user_id=%s;"
+        val params = com.google.gson.JsonArray().apply { add(userId) }.toString()
 
         val cardSelectionLayout = binding.cardSelection
         var selected_id = selectedId
 
-        ClientNetwork.retrofit.select(query).enqueue(object : Callback<JsonObject> {
+        ClientNetwork.retrofit.selectSafe(query, params).enqueue(object : Callback<JsonObject> {
             override fun onResponse(call: Call<JsonObject>, response: Response<JsonObject>) {
                 if (response.isSuccessful) {
                     var loadedCards = 0
@@ -260,14 +262,21 @@ class BuyActivity : AppCompatActivity() {
 
     private fun setProducts(orderList: ArrayList<Product>, userId: Int){
         orderList.clear()
-        var query = "SELECT ci.id as itemId,ci.quantity,pc.stock,pc.color,pc.color_hex,p.id,name,description,price," +
-                    "width,height,length,main_picture_path,upload_date,pp.picture_path,ci.color_id," +
-                    "IFNULL((SELECT COUNT(*) FROM product_reviews WHERE product_id = p.id),0) AS review_count, " +
-                    "IFNULL((SELECT AVG(rating) FROM product_reviews WHERE product_id = p.id),0) AS avg_rating " +
-                    "FROM products p, cart_items ci,product_colors pc,product_pictures pp WHERE ci.user_id=$userId " +
-                    "and pc.id = ci.color_id and pp.picture_index=0 and pp.color_id=pc.id and p.id = pp.product_id;"
+        val query = "SELECT ci.id AS itemId,ci.quantity,pc.stock,pc.color,pc.color_hex," +
+                    "p.id,p.name,p.description,p.price,p.width,p.height,p.length," +
+                    "p.main_picture_path,p.upload_date,pp.picture_path,ci.color_id," +
+                    "IFNULL((SELECT COUNT(*) FROM product_reviews WHERE product_id = p.id),0) AS review_count," +
+                    "IFNULL((SELECT AVG(rating) FROM product_reviews WHERE product_id = p.id),0) AS avg_rating," +
+                    "s.discount, ROUND(p.price * (1 - IFNULL(s.discount,0) / 100.0), 2) AS discounted_price " +
+                    "FROM cart_items ci " +
+                    "JOIN products p ON p.id = ci.product_id " +
+                    "JOIN product_colors pc ON pc.id = ci.color_id " +
+                    "JOIN product_pictures pp ON pp.color_id = pc.id AND pp.picture_index = 0 AND pp.product_id = p.id " +
+                    "LEFT JOIN sales s ON s.product_id = p.id AND NOW() BETWEEN s.start_date AND s.end_date " +
+                    "WHERE ci.user_id = %s;"
+        val params = com.google.gson.JsonArray().apply { add(userId) }.toString()
 
-        ClientNetwork.retrofit.select(query).enqueue(object : Callback<JsonObject> {
+        ClientNetwork.retrofit.selectSafe(query, params).enqueue(object : Callback<JsonObject> {
             override fun onResponse(call: Call<JsonObject>, response: Response<JsonObject>) {
                 if (response.isSuccessful) {
                     var loadedProducts = 0
@@ -293,12 +302,16 @@ class BuyActivity : AppCompatActivity() {
                             val color_hex = productObject.get("color_hex").asString
                             val picture_path = productObject.get("picture_path").asString
                             val colorId = productObject.get("color_id").asInt
+                            val discountElem = productObject.get("discount")
+                            val discount = if (discountElem == null || discountElem.isJsonNull) null else discountElem.asInt
+                            val discountedPrice = productObject.get("discounted_price").asDouble
                             var stock = productObject.get("stock").asInt
                             var quantity = productObject.get("quantity").asInt
                             if (stock>0 && quantity>stock){
                                 quantity = stock
-                                query = "UPDATE cart_items set quantity=$quantity where id=$itemId;"
-                                ClientNetwork.retrofit.update(query).enqueue(object : Callback<JsonObject> {
+                                val updateQuery = "UPDATE cart_items set quantity=%s where id=%s;"
+                                val updateParams = com.google.gson.JsonArray().apply { add(quantity); add(itemId) }.toString()
+                                ClientNetwork.retrofit.updateSafe(updateQuery, updateParams).enqueue(object : Callback<JsonObject> {
                                     override fun onResponse(call: Call<JsonObject>, response: Response<JsonObject>) {}
                                     override fun onFailure(call: Call<JsonObject>, t: Throwable) =
                                         Toast.makeText(this@BuyActivity, "Failed request: " + t.message, Toast.LENGTH_LONG).show()
@@ -316,7 +329,8 @@ class BuyActivity : AppCompatActivity() {
                                                 if(j==1) {
                                                     val product = Product(id, name, description, price, width, height,
                                                         length, main_picture, avgRating, reviewsNumber, uploadDate,
-                                                        itemId, color, color_hex, quantity, stock, picture,colorId)
+                                                        itemId, color, color_hex, quantity, stock, picture, colorId,
+                                                        discount = discount, discounted_price = discountedPrice)
                                                     if (product.stock != null && product.stock>0)
                                                         orderList.add(product)
                                                     loadedProducts++
@@ -361,12 +375,13 @@ class BuyActivity : AppCompatActivity() {
     }
 
     private fun getAddressId(type: Int,userId: Int, callback: (Int) -> Unit) {
-        var query = ""
-        if (type==0)
-            query = "SELECT current_address_id as current_id FROM users WHERE id=$userId;"
-        else query = "SELECT current_card_id as current_id FROM users WHERE id=$userId;"
+        val query = if (type==0)
+            "SELECT current_address_id as current_id FROM users WHERE id=%s;"
+        else
+            "SELECT current_card_id as current_id FROM users WHERE id=%s;"
+        val params = com.google.gson.JsonArray().apply { add(userId) }.toString()
 
-        ClientNetwork.retrofit.select(query).enqueue(object : Callback<JsonObject> {
+        ClientNetwork.retrofit.selectSafe(query, params).enqueue(object : Callback<JsonObject> {
             override fun onResponse(call: Call<JsonObject>, response: Response<JsonObject>) {
                 if (response.isSuccessful) {
                     val resultSet = response.body()?.getAsJsonArray("queryset")
@@ -383,14 +398,15 @@ class BuyActivity : AppCompatActivity() {
     }
 
     private fun createOrder(orderList: ArrayList<Product>,totalAmt: Double, userId: Int){
-        var query = "INSERT INTO orders (user_id,total_amount,payment_id,address_id) VALUES ($userId,$totalAmt," +
-        "(SELECT current_card_id FROM users WHERE id = $userId),(SELECT current_address_id FROM users WHERE id = $userId));"
+        val insertOrderQuery = "INSERT INTO orders (user_id,total_price,address_id) VALUES (%s,%s," +
+                "(SELECT current_address_id FROM users WHERE id = %s));"
+        val insertOrderParams = com.google.gson.JsonArray().apply { add(userId); add(totalAmt); add(userId) }.toString()
 
-        ClientNetwork.retrofit.insert(query).enqueue(object : Callback<JsonObject> {
+        ClientNetwork.retrofit.insertSafe(insertOrderQuery, insertOrderParams).enqueue(object : Callback<JsonObject> {
             override fun onResponse(call: Call<JsonObject>, response: Response<JsonObject>) {
                 if (response.isSuccessful) {
-                    query = "SELECT id from orders ORDER BY order_date DESC LIMIT 1"
-                    ClientNetwork.retrofit.select(query).enqueue(object : Callback<JsonObject> {
+                    val selectLastOrderQuery = "SELECT id from orders ORDER BY order_date DESC LIMIT 1"
+                    ClientNetwork.retrofit.select(selectLastOrderQuery).enqueue(object : Callback<JsonObject> {
                         override fun onResponse(call: Call<JsonObject>, response: Response<JsonObject>) {
                             if (response.isSuccessful) {
                                 val id = response.body()?.getAsJsonArray("queryset")?.get(0)?.asJsonObject
@@ -400,10 +416,13 @@ class BuyActivity : AppCompatActivity() {
                                 else{
                                     var loadedProducts = 0
                                     for(product in orderList){
-                                        query = "INSERT INTO order_items (order_id,color_id,quantity,price) " +
-                                                "VALUES ($id,${product.colorId},${product.quantity},${product.price});"
+                                        val itemQuery = "INSERT INTO order_items (order_id,product_id,color_id,quantity,price) " +
+                                                "VALUES (%s,%s,%s,%s,%s);"
+                                        val itemParams = com.google.gson.JsonArray().apply {
+                                            add(id); add(product.id); add(product.colorId); add(product.quantity); add(product.discounted_price)
+                                        }.toString()
 
-                                        ClientNetwork.retrofit.insert(query).enqueue(object : Callback<JsonObject> {
+                                        ClientNetwork.retrofit.insertSafe(itemQuery, itemParams).enqueue(object : Callback<JsonObject> {
                                             override fun onResponse(call: Call<JsonObject>, response: Response<JsonObject>) {
                                                 if (response.isSuccessful){
                                                     loadedProducts++
@@ -432,17 +451,18 @@ class BuyActivity : AppCompatActivity() {
     }
 
     private fun removeFromCart(orderList: ArrayList<Product>){
-        var query = ""
         for(product in orderList){
-            query = "DELETE FROM cart_items WHERE id = ${product.itemId};"
+            val delQuery = "DELETE FROM cart_items WHERE id = %s;"
+            val delParams = com.google.gson.JsonArray().apply { add(product.itemId) }.toString()
 
-            ClientNetwork.retrofit.remove(query).enqueue(object : Callback<JsonObject> {
+            ClientNetwork.retrofit.removeSafe(delQuery, delParams).enqueue(object : Callback<JsonObject> {
                 override fun onResponse(call: Call<JsonObject>, response: Response<JsonObject>) {
                     if (response.isSuccessful){
                         val quantity = product.quantity
-                        val qty = if (quantity != null) product.stock?.minus(quantity) else 0
-                        query = "UPDATE product_colors SET stock = ${qty} WHERE id = ${product.colorId};"
-                        ClientNetwork.retrofit.remove(query).enqueue(object : Callback<JsonObject> {
+                        val newStock = if (quantity != null) (product.stock ?: 0) - quantity else 0
+                        val stockQuery = "UPDATE product_colors SET stock = %s WHERE id = %s;"
+                        val stockParams = com.google.gson.JsonArray().apply { add(newStock); add(product.colorId) }.toString()
+                        ClientNetwork.retrofit.updateSafe(stockQuery, stockParams).enqueue(object : Callback<JsonObject> {
                             override fun onResponse(call: Call<JsonObject>, response: Response<JsonObject>) {}
                             override fun onFailure(call: Call<JsonObject>, t: Throwable) =
                                 Toast.makeText(this@BuyActivity, "Failed request: " + t.message, Toast.LENGTH_LONG).show()

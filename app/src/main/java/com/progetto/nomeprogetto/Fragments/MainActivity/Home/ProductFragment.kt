@@ -95,18 +95,29 @@ class ProductFragment : Fragment() {
 
     private fun setProducts(productSearched: String, productList: ArrayList<Product>,searchType: Int){
         val query: String
-        if(searchType==0)
-            query = "SELECT c.name as category,p.id,p.name,description,price,width,height,length,main_picture_path,upload_date," +
-                    "IF NULL((SELECT COUNT(*) FROM product_reviews WHERE product_id = p.id),0) AS review_count," +
-                    "IF NULL((SELECT AVG(rating) FROM product_reviews WHERE product_id = p.id),0) AS avg_rating " +
-                    "FROM products p,categories c WHERE c.id=p.category_id and LOWER(p.name) LIKE LOWER('%$productSearched%');"
-        else query = "SELECT p.id,p.name,p.description,price,width,height,length,main_picture_path,upload_date," +
-                "IF NULL((SELECT COUNT(*) FROM product_reviews WHERE product_id = p.id),0) AS review_count," +
-                "IF NULL((SELECT AVG(rating) FROM product_reviews WHERE product_id = p.id),0) AS avg_rating " +
-                "FROM products p,categories c WHERE p.category_id = c.id and c.name='$productSearched';"
+        val params: String
+        if(searchType==0) {
+            query = "SELECT c.name as category,p.id,p.name,p.description,p.price,p.width,p.height,p.length,p.main_picture_path,p.upload_date," +
+                    "IFNULL((SELECT COUNT(*) FROM product_reviews WHERE product_id = p.id),0) AS review_count," +
+                    "IFNULL((SELECT AVG(rating) FROM product_reviews WHERE product_id = p.id),0) AS avg_rating," +
+                    "s.discount, ROUND(p.price * (1 - IFNULL(s.discount,0) / 100.0), 2) AS discounted_price " +
+                    "FROM products p JOIN categories c ON c.id=p.category_id " +
+                    "LEFT JOIN sales s ON s.product_id = p.id AND NOW() BETWEEN s.start_date AND s.end_date " +
+                    "WHERE LOWER(p.name) LIKE LOWER(CONCAT('%', %s, '%'));"
+            params = com.google.gson.JsonArray().apply { add(productSearched) }.toString()
+        } else {
+            query = "SELECT p.id,p.name,p.description,p.price,p.width,p.height,p.length,p.main_picture_path,p.upload_date," +
+                    "IFNULL((SELECT COUNT(*) FROM product_reviews WHERE product_id = p.id),0) AS review_count," +
+                    "IFNULL((SELECT AVG(rating) FROM product_reviews WHERE product_id = p.id),0) AS avg_rating," +
+                    "s.discount, ROUND(p.price * (1 - IFNULL(s.discount,0) / 100.0), 2) AS discounted_price " +
+                    "FROM products p JOIN categories c ON p.category_id = c.id " +
+                    "LEFT JOIN sales s ON s.product_id = p.id AND NOW() BETWEEN s.start_date AND s.end_date " +
+                    "WHERE c.name = %s;"
+            params = com.google.gson.JsonArray().apply { add(productSearched) }.toString()
+        }
         val context = requireContext()
 
-        ClientNetwork.retrofit.select(query).enqueue(object : Callback<JsonObject> {
+        ClientNetwork.retrofit.selectSafe(query, params).enqueue(object : Callback<JsonObject> {
             override fun onResponse(call: Call<JsonObject>, response: Response<JsonObject>) {
                 if (response.isSuccessful) {
                     var loadedProducts = 0
@@ -127,36 +138,37 @@ class ProductFragment : Fragment() {
                             val formatter = DateTimeFormatter.ISO_LOCAL_DATE_TIME
                             val uploadDate = LocalDateTime.parse(date, formatter)
                             val main_picture_path = productObject.get("main_picture_path").asString
-                            var category: String? =
-                                if(searchType==0)
-                                    productObject.get("category").asString
-                                else
-                                    null
+                            val category: String? = if(searchType==0) productObject.get("category").asString else null
+                            val discountElem = productObject.get("discount")
+                            val discount = if (discountElem == null || discountElem.isJsonNull) null else discountElem.asInt
+                            val discountedPrice = productObject.get("discounted_price").asDouble
                             ClientNetwork.retrofit.image(main_picture_path).enqueue(object : Callback<ResponseBody> {
                                 override fun onResponse(call: Call<ResponseBody>, response: Response<ResponseBody>) {
-                                    if(response.isSuccessful) {
-                                        if (response.body()!=null) {
-                                            val main_picture = BitmapFactory.decodeStream(response.body()?.byteStream())
-                                            val product = Product(id, name, description, price,width,height,length,main_picture
-                                                ,avgRating,reviewsNumber,uploadDate, category = category)
-                                            productList.add(product)
-                                            loadedProducts++
-                                            if(loadedProducts==productsArray.size()) {
-                                                binding.recyclerView.adapter?.notifyDataSetChanged()
-                                                for(p in productList) {
-                                                    if (p.category != null) {
-                                                        val chip = Chip(context)
-                                                        chip.text = p.category
-                                                        chip.isCheckable = true
-                                                        binding.chipGroup.addView(chip)
-                                                    }
-                                                }
+                                    if(response.isSuccessful && response.body() != null) {
+                                        val main_picture = BitmapFactory.decodeStream(response.body()?.byteStream())
+                                        val product = Product(id, name, description, price, width, height, length, main_picture,
+                                            avgRating, reviewsNumber, uploadDate, category = category,
+                                            discount = discount, discounted_price = discountedPrice)
+                                        productList.add(product)
+                                    }
+                                    loadedProducts++
+                                    if(loadedProducts==productsArray.size()) {
+                                        binding.recyclerView.adapter?.notifyDataSetChanged()
+                                        val addedCategories = mutableSetOf<String>()
+                                        for(p in productList) {
+                                            if (p.category != null && addedCategories.add(p.category)) {
+                                                val chip = Chip(context)
+                                                chip.text = p.category
+                                                chip.isCheckable = true
+                                                binding.chipGroup.addView(chip)
                                             }
                                         }
                                     }
                                 }
                                 override fun onFailure(call: Call<ResponseBody>, t: Throwable) {
-                                    Toast.makeText(context, "Failed request: " + t.message, Toast.LENGTH_LONG).show()
+                                    loadedProducts++
+                                    if(loadedProducts==productsArray.size())
+                                        binding.recyclerView.adapter?.notifyDataSetChanged()
                                 }
                             })
                         }

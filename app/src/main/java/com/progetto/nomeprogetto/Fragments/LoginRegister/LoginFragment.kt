@@ -40,9 +40,7 @@ class LoginFragment : Fragment() {
     }
 
     private fun loginUser(email: String, password: String){
-        val query = "select * from users where email = '${email}' and password = '${password}'"
-
-        ClientNetwork.retrofit.select(query).enqueue(
+        ClientNetwork.retrofit.login(email, password).enqueue(
             object : Callback<JsonObject> {
                 override fun onResponse(call: Call<JsonObject>, response: Response<JsonObject>) {
                     if (response.isSuccessful) {
@@ -50,12 +48,12 @@ class LoginFragment : Fragment() {
                         if (user.size() == 1) {
                             val sharedPref = requireActivity().getSharedPreferences(getString(R.string.preference_file_key), Context.MODE_PRIVATE)
                             sharedPref.edit().putBoolean("IS_LOGGED_IN", true)
-                                .putInt("ID",user[0].asJsonObject.get("id").asInt)
+                                .putInt("ID", user[0].asJsonObject.get("id").asInt)
                                 .apply()
                             startActivity(Intent(requireContext(), MainActivity::class.java))
                             requireActivity().finish()
                         } else {
-                            Toast.makeText(requireContext(), "credenziali errate", Toast.LENGTH_LONG).show()
+                            Toast.makeText(requireContext(), "Credenziali errate", Toast.LENGTH_LONG).show()
                         }
                     }
                 }

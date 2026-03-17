@@ -125,14 +125,14 @@ class ProductDetailFragment : Fragment() {
             val sharedPref = requireActivity().getSharedPreferences(getString(R.string.preference_file_key), Context.MODE_PRIVATE)
             val userId = sharedPref.getInt("ID", 0)
             val qty = binding.spinnerQty.selectedItem.toString().toInt()
-            addToCart(userId,qty,colorSelected)
+            addToCart(userId, qty, colorSelected, product?.id ?: 0)
         }
 
         binding.addToWish.setOnClickListener{
             if(!addToWish) {
                 binding.addToWish.imageTintList = ColorStateList.valueOf(Color.RED)
                 addToWish = true
-                addToWish(colorSelected)
+                addToWish(colorSelected, product?.id ?: 0)
             }else{
                 binding.addToWish.imageTintList = ColorStateList.valueOf(Color.GRAY)
                 addToWish = false
@@ -155,18 +155,23 @@ class ProductDetailFragment : Fragment() {
 
         binding.productName.text = product?.name
         binding.productDescription.text = product?.description
-        binding.productPrice.text = product?.price.toString() + " €"
+        if (product?.discount != null) {
+            binding.productPrice.text = String.format("%.2f € (-%d%%)", product.discounted_price, product.discount)
+        } else {
+            binding.productPrice.text = String.format("%.2f €", product?.price)
+        }
         binding.productSpecs.text = "Larghezza: ${product?.width}\nLunghezza: ${product?.length}\nAltezza: ${product?.height}"
 
         return binding.root
     }
 
     private fun hasUserBought(userId: Int,productId: Int?){
-        var query = "SELECT EXISTS (SELECT 1 FROM orders o, order_items oi, product_colors pc " +
+        val query = "SELECT EXISTS (SELECT 1 FROM orders o, order_items oi, product_colors pc " +
                 "WHERE o.id = oi.order_id AND oi.color_id = pc.id " +
-                "AND o.user_id = $userId AND pc.product_id = $productId) AS has_bought;"
+                "AND o.user_id = %s AND pc.product_id = %s) AS has_bought;"
+        val params = com.google.gson.JsonArray().apply { add(userId); add(productId) }.toString()
 
-        ClientNetwork.retrofit.select(query).enqueue(object : Callback<JsonObject> {
+        ClientNetwork.retrofit.selectSafe(query, params).enqueue(object : Callback<JsonObject> {
             override fun onResponse(call: Call<JsonObject>, response: Response<JsonObject>) {
                 if (response.isSuccessful) {
                     val hasBought = response.body()?.getAsJsonArray("queryset")?.get(0)
@@ -181,10 +186,10 @@ class ProductDetailFragment : Fragment() {
     }
 
     private fun hasUserReviewed(userId: Int,productId: Int?){
-        var query = "SELECT EXISTS (SELECT 1 FROM product_reviews WHERE product_id = $productId AND user_id = $userId) " +
-                "AS has_reviewed;"
+        val query = "SELECT EXISTS (SELECT 1 FROM product_reviews WHERE product_id = %s AND user_id = %s) AS has_reviewed;"
+        val params = com.google.gson.JsonArray().apply { add(productId); add(userId) }.toString()
 
-        ClientNetwork.retrofit.select(query).enqueue(object : Callback<JsonObject> {
+        ClientNetwork.retrofit.selectSafe(query, params).enqueue(object : Callback<JsonObject> {
             override fun onResponse(call: Call<JsonObject>, response: Response<JsonObject>) {
                 if (response.isSuccessful) {
                     val hasReviewed = response.body()?.getAsJsonArray("queryset")?.get(0)
@@ -215,10 +220,12 @@ class ProductDetailFragment : Fragment() {
     }
 
     private fun addReview(userId: Int,productId: Int?, reviewList: ArrayList<ProductReview>){
-        val query = "INSERT INTO product_reviews (product_id,user_id,rating,comment) " +
-                "VALUES ($productId,$userId,${binding.productRating.rating.toInt()},'${binding.reviewText.text.toString()}');"
+        val query = "INSERT INTO product_reviews (product_id,user_id,rating,comment) VALUES (%s,%s,%s,%s);"
+        val params = com.google.gson.JsonArray().apply {
+            add(productId); add(userId); add(binding.productRating.rating.toInt()); add(binding.reviewText.text.toString())
+        }.toString()
 
-        ClientNetwork.retrofit.insert(query).enqueue(object : Callback<JsonObject> {
+        ClientNetwork.retrofit.insertSafe(query, params).enqueue(object : Callback<JsonObject> {
             override fun onResponse(call: Call<JsonObject>, response: Response<JsonObject>) {
                 if (response.isSuccessful) {
                     Toast.makeText(requireContext(), "Recensione effettuata con successo", Toast.LENGTH_SHORT).show()
@@ -232,10 +239,11 @@ class ProductDetailFragment : Fragment() {
         })
     }
 
-    private fun addToCart(userId: Int,qty: Int,colorId: Int){
-        var query = "SELECT id,quantity from cart_items where user_id=$userId and color_id=$colorId;"
+    private fun addToCart(userId: Int, qty: Int, colorId: Int, productId: Int){
+        val checkQuery = "SELECT id,quantity from cart_items where user_id=%s and color_id=%s;"
+        val checkParams = com.google.gson.JsonArray().apply { add(userId); add(colorId) }.toString()
 
-        ClientNetwork.retrofit.select(query).enqueue(object : Callback<JsonObject> {
+        ClientNetwork.retrofit.selectSafe(checkQuery, checkParams).enqueue(object : Callback<JsonObject> {
             override fun onResponse(call: Call<JsonObject>, response: Response<JsonObject>) {
                 if (response.isSuccessful) {
                     val itemsArray = response.body()?.getAsJsonArray("queryset")
@@ -243,13 +251,12 @@ class ProductDetailFragment : Fragment() {
                         val itemObject = itemsArray[0].asJsonObject
                         val quantity = itemObject.get("quantity").asInt
                         val itemId = itemObject.get("id").asInt
-                        // se l'utente prova a mettere più oggetti di quanto ne siano disponibili
                         if(quantity+qty>currentStock)
                             Toast.makeText(requireContext(), "Non puoi inserire più della quantità disponibile per prodotto", Toast.LENGTH_LONG).show()
                         else{
-                            query = "UPDATE cart_items set quantity=${quantity+qty} where id=$itemId;"
-
-                            ClientNetwork.retrofit.update(query).enqueue(object : Callback<JsonObject> {
+                            val updateQuery = "UPDATE cart_items set quantity=%s where id=%s;"
+                            val updateParams = com.google.gson.JsonArray().apply { add(quantity+qty); add(itemId) }.toString()
+                            ClientNetwork.retrofit.updateSafe(updateQuery, updateParams).enqueue(object : Callback<JsonObject> {
                                 override fun onResponse(call: Call<JsonObject>, response: Response<JsonObject>) {
                                     if(response.isSuccessful)
                                         Toast.makeText(requireContext(), "Articoli aggiunti al carrello $qty",Toast.LENGTH_SHORT).show()
@@ -260,10 +267,10 @@ class ProductDetailFragment : Fragment() {
                                     Toast.makeText(requireContext(), "Failed request: " + t.message, Toast.LENGTH_LONG).show()
                             })
                         }
-                    }else{ //se non esiste nel carrello lo aggiungo
-                        query = "INSERT INTO cart_items (user_id,quantity,color_id) VALUES ($userId,$qty,$colorId);"
-                        println(query)
-                        ClientNetwork.retrofit.insert(query).enqueue(object : Callback<JsonObject> {
+                    }else{
+                        val insertQuery = "INSERT INTO cart_items (user_id,product_id,quantity,color_id) VALUES (%s,%s,%s,%s);"
+                        val insertParams = com.google.gson.JsonArray().apply { add(userId); add(productId); add(qty); add(colorId) }.toString()
+                        ClientNetwork.retrofit.insertSafe(insertQuery, insertParams).enqueue(object : Callback<JsonObject> {
                             override fun onResponse(call: Call<JsonObject>, response: Response<JsonObject>) {
                                 if (response.isSuccessful)
                                     Toast.makeText(requireContext(), "Articoli aggiunti al carrello $qty", Toast.LENGTH_SHORT).show()
@@ -281,21 +288,22 @@ class ProductDetailFragment : Fragment() {
         })
     }
 
-    private fun addToWish(colorId: Int){
+    private fun addToWish(colorId: Int, productId: Int){
         val sharedPref = requireActivity().getSharedPreferences(getString(R.string.preference_file_key), Context.MODE_PRIVATE)
         val userId = sharedPref.getInt("ID", 0)
-        var query = "SELECT id from wishlist_items where user_id=$userId and color_id=$colorId;"
+        val checkQuery = "SELECT id from wishlist_items where user_id=%s and color_id=%s;"
+        val checkParams = com.google.gson.JsonArray().apply { add(userId); add(colorId) }.toString()
 
-        ClientNetwork.retrofit.select(query).enqueue(object : Callback<JsonObject> {
+        ClientNetwork.retrofit.selectSafe(checkQuery, checkParams).enqueue(object : Callback<JsonObject> {
             override fun onResponse(call: Call<JsonObject>, response: Response<JsonObject>) {
                 if (response.isSuccessful) {
                     val itemsArray = response.body()?.getAsJsonArray("queryset")
                     if (itemsArray != null && itemsArray.size() > 0) {
                         Toast.makeText(requireContext(), "Articolo già presente nella wishlist", Toast.LENGTH_LONG).show()
                     }else{
-                        query = "INSERT INTO wishlist_items (user_id,color_id) VALUES ($userId,$colorId);"
-
-                        ClientNetwork.retrofit.insert(query).enqueue(object : Callback<JsonObject> {
+                        val insertQuery = "INSERT INTO wishlist_items (user_id,product_id,color_id) VALUES (%s,%s,%s);"
+                        val insertParams = com.google.gson.JsonArray().apply { add(userId); add(productId); add(colorId) }.toString()
+                        ClientNetwork.retrofit.insertSafe(insertQuery, insertParams).enqueue(object : Callback<JsonObject> {
                             override fun onResponse(call: Call<JsonObject>, response: Response<JsonObject>) {
                                 if (response.isSuccessful)
                                     Toast.makeText(requireContext(), "Articolo aggiunto alla wishlist", Toast.LENGTH_SHORT).show()
@@ -316,9 +324,10 @@ class ProductDetailFragment : Fragment() {
     private fun removeFromWish(colorId: Int){
         val sharedPref = requireActivity().getSharedPreferences(getString(R.string.preference_file_key), Context.MODE_PRIVATE)
         val userId = sharedPref.getInt("ID", 0)
-        var query = "DELETE FROM wishlist_items where user_id=$userId and color_id=$colorId;"
+        val query = "DELETE FROM wishlist_items where user_id=%s and color_id=%s;"
+        val params = com.google.gson.JsonArray().apply { add(userId); add(colorId) }.toString()
 
-        ClientNetwork.retrofit.remove(query).enqueue(object : Callback<JsonObject> {
+        ClientNetwork.retrofit.removeSafe(query, params).enqueue(object : Callback<JsonObject> {
             override fun onResponse(call: Call<JsonObject>, response: Response<JsonObject>) =
                 Toast.makeText(context, "Articolo rimosso dalla wishlist", Toast.LENGTH_LONG).show()
             override fun onFailure(call: Call<JsonObject>, t: Throwable) =
@@ -327,9 +336,9 @@ class ProductDetailFragment : Fragment() {
     }
 
     private fun setColors(productId: Int?,colorList: ArrayList<ProductColor>,imageList: HashMap<Int, Bitmap>){
-        val query = "SELECT id,pc.color AS color_name,stock, pc.color_hex AS color_hex FROM product_colors pc " +
-                "WHERE pc.product_id = $productId;"
-        ClientNetwork.retrofit.select(query).enqueue(object : Callback<JsonObject> {
+        val query = "SELECT id,pc.color AS color_name,stock, pc.color_hex AS color_hex FROM product_colors pc WHERE pc.product_id = %s;"
+        val params = com.google.gson.JsonArray().apply { add(productId) }.toString()
+        ClientNetwork.retrofit.selectSafe(query, params).enqueue(object : Callback<JsonObject> {
             override fun onResponse(call: Call<JsonObject>, response: Response<JsonObject>) {
                 if (response.isSuccessful) {
                     val colorsArray = response.body()?.getAsJsonArray("queryset")
@@ -370,9 +379,10 @@ class ProductDetailFragment : Fragment() {
     private fun setWishButton(colorId: Int){
         val sharedPref = requireActivity().getSharedPreferences(getString(R.string.preference_file_key), Context.MODE_PRIVATE)
         val userId = sharedPref.getInt("ID", 0)
-        var query = "SELECT id from wishlist_items where user_id=$userId and color_id=$colorId;"
+        val query = "SELECT id from wishlist_items where user_id=%s and color_id=%s;"
+        val params = com.google.gson.JsonArray().apply { add(userId); add(colorId) }.toString()
 
-        ClientNetwork.retrofit.select(query).enqueue(object : Callback<JsonObject> {
+        ClientNetwork.retrofit.selectSafe(query, params).enqueue(object : Callback<JsonObject> {
             override fun onResponse(call: Call<JsonObject>, response: Response<JsonObject>) {
                 if (response.isSuccessful) {
                     val itemsArray = response.body()?.getAsJsonArray("queryset")
@@ -391,10 +401,10 @@ class ProductDetailFragment : Fragment() {
     }
 
     private fun setImages(productId: Int?, imageList: HashMap<Int, Bitmap>, colorSelected: Int) {
-        val query = "SELECT picture_path,picture_index FROM product_pictures WHERE product_id = $productId" +
-                " and color_id=$colorSelected;"
+        val query = "SELECT picture_path,picture_index FROM product_pictures WHERE product_id = %s and color_id=%s;"
+        val params = com.google.gson.JsonArray().apply { add(productId); add(colorSelected) }.toString()
 
-        ClientNetwork.retrofit.select(query).enqueue(object : Callback<JsonObject> {
+        ClientNetwork.retrofit.selectSafe(query, params).enqueue(object : Callback<JsonObject> {
             override fun onResponse(call: Call<JsonObject>, response: Response<JsonObject>) {
                 if (response.isSuccessful) {
                     val picturesArray = response.body()?.getAsJsonArray("queryset")
@@ -430,9 +440,10 @@ class ProductDetailFragment : Fragment() {
 
     private fun setReviews(productId: Int?, reviewList: ArrayList<ProductReview>) {
         val query = "SELECT pr.rating, pr.comment, pr.review_date, u.username FROM product_reviews pr, users u " +
-                "WHERE pr.user_id = u.id and pr.product_id = $productId;"
+                "WHERE pr.user_id = u.id and pr.product_id = %s;"
+        val params = com.google.gson.JsonArray().apply { add(productId) }.toString()
 
-        ClientNetwork.retrofit.select(query).enqueue(object : Callback<JsonObject> {
+        ClientNetwork.retrofit.selectSafe(query, params).enqueue(object : Callback<JsonObject> {
             override fun onResponse(call: Call<JsonObject>, response: Response<JsonObject>) {
                 if (response.isSuccessful) {
                     val reviewsArray = response.body()?.getAsJsonArray("queryset")

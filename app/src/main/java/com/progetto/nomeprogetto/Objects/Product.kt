@@ -25,5 +25,8 @@ class Product(
     val stock: Int? = null,
     val picture: Bitmap? = null,
     val colorId: Int? = null,
-    val category: String? = null
+    val category: String? = null,
+    val discount: Int? = null,
+    val discount_desc: String? = null,
+    val discounted_price: Double = price
 ) : Parcelable

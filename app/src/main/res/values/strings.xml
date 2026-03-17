@@ -1,4 +1,4 @@
 <resources>
-    <string name="app_name">Nome Progetto</string>
+    <string name="app_name">RubyRetail</string>
     <string name="preference_file_key">PREFERENCE_FILE</string>
 </resources>

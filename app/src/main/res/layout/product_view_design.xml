@@ -2,27 +2,27 @@
 <androidx.cardview.widget.CardView
     xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
-    android:layout_height="wrap_content">
+    android:layout_height="120dp">
 
     <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
+        android:layout_height="match_parent"
         android:orientation="horizontal">
 
         <ImageView
             android:layout_margin="5dp"
             android:id="@+id/imageView"
             android:layout_width="0dp"
-            android:layout_height="wrap_content"
+            android:layout_height="match_parent"
             android:layout_weight="1"
             android:scaleType="fitCenter"
-            android:adjustViewBounds="true"
+            android:adjustViewBounds="false"
             android:src="@drawable/ic_default_image" />
-        
+
         <LinearLayout
             android:gravity="center"
             android:layout_width="0dp"
-            android:layout_height="wrap_content"
+            android:layout_height="match_parent"
             android:orientation="vertical"
             android:layout_weight="1.5"
             android:layout_gravity="center_vertical"
@@ -37,7 +37,7 @@
                 android:text="product name"
                 android:textSize="20dp"
                 android:textStyle="bold"/>
-            
+
             <LinearLayout
                 android:paddingVertical="5dp"
                 android:layout_width="wrap_content"
@@ -72,17 +72,52 @@
                     android:textSize="14dp"/>
 
             </LinearLayout>
-            
-            <TextView
-                android:paddingVertical="5dp"
-                android:id="@+id/price"
+
+            <!-- Main price + badge -->
+            <LinearLayout
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="price"
-                android:textSize="18dp"/>
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:paddingTop="5dp">
+
+                <TextView
+                    android:id="@+id/price"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="price"
+                    android:textSize="18dp"/>
+
+                <TextView
+                    android:id="@+id/discount_badge"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="6dp"
+                    android:background="@color/redPart"
+                    android:textColor="@color/white"
+                    android:textSize="11dp"
+                    android:textStyle="bold"
+                    android:singleLine="true"
+                    android:paddingLeft="5dp"
+                    android:paddingRight="5dp"
+                    android:paddingTop="2dp"
+                    android:paddingBottom="2dp"
+                    android:visibility="gone"/>
+
+            </LinearLayout>
+
+            <!-- Original price below (strikethrough, shown only when on sale) -->
+            <TextView
+                android:id="@+id/original_price"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:paddingBottom="5dp"
+                android:textSize="12dp"
+                android:textColor="@android:color/darker_gray"
+                android:visibility="gone"/>
 
         </LinearLayout>
-        
+
     </LinearLayout>
 
 </androidx.cardview.widget.CardView>
