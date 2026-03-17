@@ -1,6 +1,6 @@
 # RubyRetail
 
-An Android e-commerce app built as a Bachelor's degree project. Users can browse products by category or search, manage a cart and wishlist, save delivery addresses and payment cards, place orders, and leave reviews on purchased products.
+An Android e-commerce app built for the **Programmazione Web e Mobile** course (BEng Computer Engineering, University of Palermo, 2023). Users can browse products by category or search, manage a cart and wishlist, save delivery addresses and payment cards, place orders, and leave reviews on purchased products.
 
 ## Screenshots
 
