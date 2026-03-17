@@ -86,11 +86,28 @@ Open `local.properties` in the project root and set `server.baseUrl`:
 **Recommended — Android Studio:**
 Open the project in [Android Studio](https://developer.android.com/studio), connect your device or start an emulator, and press Run. Android Studio handles the SDK, Java, and `adb` automatically.
 
-**Command line (if you already have the Android SDK configured):**
+**Command line (macOS/Linux, no Android Studio):**
+
+Install the required tools:
 ```bash
+brew install --cask temurin@21          # Java 21
+brew install --cask android-commandlinetools
+```
+
+Set up the Android SDK (accept all licences, then download the required components):
+```bash
+export ANDROID_HOME=/opt/homebrew/share/android-commandlinetools
+yes | sdkmanager --licenses
+sdkmanager "platform-tools" "platforms;android-33" "build-tools;33.0.0"
+```
+
+Build and install:
+```bash
+export PATH="$ANDROID_HOME/platform-tools:$PATH"
 ./gradlew installDebug
 ```
-Prerequisites: Java 21+ and the Android SDK with `ANDROID_HOME` set. `adb` must be on your PATH.
+
+Connect your device via USB with USB debugging enabled before running `installDebug`.
 
 ## Database Schema
 
